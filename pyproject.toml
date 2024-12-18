@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "meetic"
+version = "0.1.0"
+description = ""
+authors = ["hashem-cruncher <h.aljarah@ai-crunch.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+azure-identity = "^1.19.0"
+msgraph-sdk = "^1.15.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
