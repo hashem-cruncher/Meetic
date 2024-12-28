@@ -1,6 +1,5 @@
 from configparser import SectionProxy
-
-from azure.identity import DeviceCodeCredential
+from azure.identity import ClientSecretCredential
 from msgraph import GraphServiceClient
 from msgraph.generated.models.body_type import BodyType
 from msgraph.generated.models.email_address import EmailAddress
@@ -20,27 +19,32 @@ from msgraph.generated.users.item.user_item_request_builder import (
 
 class Graph:
     settings: SectionProxy
-    device_code_credential: DeviceCodeCredential
+    client_credential: ClientSecretCredential
     user_client: GraphServiceClient
 
     def __init__(self, config: SectionProxy):
         self.settings = config
         client_id = self.settings["clientId"]
         tenant_id = self.settings["tenantId"]
-        graph_scopes = self.settings["graphUserScopes"].split(" ")
+        client_secret = self.settings["clientSecret"]
+        self.user_email = self.settings.get("userEmail", "m.marei@ai-crunch.com")
 
-        self.device_code_credential = DeviceCodeCredential(
-            client_id, tenant_id=tenant_id
+        self.client_credential = ClientSecretCredential(
+            tenant_id=tenant_id, client_id=client_id, client_secret=client_secret
         )
-        self.user_client = GraphServiceClient(self.device_code_credential, graph_scopes)
+
+        self.user_client = GraphServiceClient(
+            self.client_credential, ["https://graph.microsoft.com/.default"]
+        )
 
     async def get_user_token(self):
-        graph_scopes = self.settings["graphUserScopes"]
-        access_token = self.device_code_credential.get_token(graph_scopes)
+        access_token = self.client_credential.get_token(
+            "https://graph.microsoft.com/.default"
+        )
         return access_token.token
 
     async def get_user(self):
-        # Only request specific properties using $select
+        # Fixed: Using users endpoint instead of /me
         query_params = UserItemRequestBuilder.UserItemRequestBuilderGetQueryParameters(
             select=["displayName", "mail", "userPrincipalName"]
         )
@@ -51,16 +55,16 @@ class Graph:
             )
         )
 
-        user = await self.user_client.me.get(request_configuration=request_config)
+        # This is the key change: using users endpoint instead of me
+        user = await self.user_client.users.by_user_id(self.user_email).get(
+            request_configuration=request_config
+        )
         return user
 
     async def get_inbox(self):
         query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-            # Only request specific properties
             select=["from", "isRead", "receivedDateTime", "subject"],
-            # Get at most 25 results
             top=25,
-            # Sort by received time, newest first
             orderby=["receivedDateTime DESC"],
         )
         request_config = (
@@ -69,9 +73,11 @@ class Graph:
             )
         )
 
-        messages = await self.user_client.me.mail_folders.by_mail_folder_id(
-            "inbox"
-        ).messages.get(request_configuration=request_config)
+        messages = (
+            await self.user_client.users.by_user_id(self.user_email)
+            .mail_folders.by_mail_folder_id("inbox")
+            .messages.get(request_configuration=request_config)
+        )
         return messages
 
     async def send_mail(self, subject: str, body: str, recipient: list[str]):
@@ -82,7 +88,6 @@ class Graph:
         message.body.content_type = BodyType.Text
         message.body.content = body
 
-        # Create a list of recipients
         message.to_recipients = []
         for email in recipient:
             to_recipient = Recipient()
@@ -94,18 +99,12 @@ class Graph:
         request_body.message = message
         request_body.save_to_sent_items = True
 
-        await self.user_client.me.send_mail.post(body=request_body)
+        await self.user_client.users.by_user_id(self.user_email).send_mail.post(
+            body=request_body
+        )
 
     async def get_call_records(self):
         try:
-            # Get call records from the past 30 days
-            query_params = {
-                "select": ["id", "startDateTime", "endDateTime", "type", "modalities"],
-                "orderby": ["startDateTime DESC"],
-                "top": 50,  # Adjust this number based on your needs
-            }
-
-            # Get the call records
             records = await self.user_client.communications.call_records.get()
             return records
         except Exception as e:

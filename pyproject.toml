@@ -7,6 +7,8 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+# azure-identity = "^1.19.0"
+# msgraph-sdk = "^1.15.0"
 azure-identity = "^1.19.0"
 msgraph-sdk = "^1.15.0"
 
